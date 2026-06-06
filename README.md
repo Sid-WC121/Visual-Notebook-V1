@@ -1,4 +1,4 @@
-# Visual Notebook v2
+# Visual Notebook v1
 
 No-code interactive data exploration tool — Polars (lazy) backend + React/TypeScript frontend with ECharts and Leaflet.
 
