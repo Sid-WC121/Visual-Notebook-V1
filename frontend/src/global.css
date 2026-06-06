@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #fafafa;
+  --color-panel: #ffffff;
+  --color-panel2: #f9fafb;
+  --color-panel3: #f3f4f6;
+  --color-border: #e5e7eb;
+  --color-border2: #d1d5db;
+  --color-text: #0f172a;
+  --color-textd: #334155;
+  --color-textdim: #64748b;
+  --color-textmute: #94a3b8;
+  --color-accent: #4f46e5;
+  --color-accentl: #6366f1;
+  --color-accent50: #eef2ff;
+  --color-success: #10b981;
+  --color-warn: #f59e0b;
+  --color-danger: #ef4444;
+  --color-pink: #ec4899;
+
+  --font-sans: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+  --font-mono: ui-monospace, SF Mono, Menlo, monospace;
+
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-pop: 0 8px 24px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-glow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+
+  --animate-progress-ind: progress-ind 1.5s infinite linear;
+
+  @keyframes progress-ind {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border2);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-textmute);
+  }
+
+  .leaflet-container {
+    background: var(--color-panel2);
+    font-family: inherit;
+  }
+  .leaflet-control-attribution {
+    background: rgba(255, 255, 255, 0.8) !important;
+    color: var(--color-textdim) !important;
+  }
+  .leaflet-control-attribution a {
+    color: var(--color-accent) !important;
+  }
+  .leaflet-bar a {
+    background: var(--color-panel) !important;
+    color: var(--color-text) !important;
+    border-color: var(--color-border) !important;
+  }
+  .leaflet-bar a:hover {
+    background: var(--color-panel2) !important;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .mask-fade-left {
+    mask-image: linear-gradient(to right, transparent, black 40px);
+  }
+  .mask-fade-right {
+    mask-image: linear-gradient(to left, transparent, black 40px);
+  }
+  .mask-fade-both {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 40px,
+      black calc(100% - 40px),
+      transparent
+    );
+  }
+}
+
+/* ── Markdown cell rendered output ──────────────────────────────────────── */
+.markdown-body h1 { font-size: 1.25rem; font-weight: 700; margin: 0.25rem 0; color: var(--color-text); }
+.markdown-body h2 { font-size: 1.05rem; font-weight: 600; margin: 0.2rem 0; color: var(--color-text); }
+.markdown-body h3 { font-size: 0.9rem;  font-weight: 600; margin: 0.15rem 0; color: var(--color-textmute); letter-spacing: 0.02em; }
+.markdown-body p  { margin: 0.15rem 0; }
+.markdown-body ul { margin: 0.25rem 0 0.25rem 1.2rem; list-style: disc; }
+.markdown-body li { margin: 0.1rem 0; }
+.markdown-body strong { font-weight: 600; }
+.markdown-body em { font-style: italic; }
+.markdown-body del { text-decoration: line-through; opacity: 0.6; }
+.markdown-body code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  background: var(--color-panel3);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0 4px;
+}

@@ -1,0 +1,11 @@
+[project]
+name = "va-project"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["visual-notebook[dev]"]
+
+[tool.uv.workspace]
+members = ["backend"]
+
+[tool.uv.sources]
+visual-notebook = { workspace = true }

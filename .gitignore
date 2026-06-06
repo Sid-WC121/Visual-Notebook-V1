@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+env/
+venv/
+.venv/
+build/
+dist/
+eggs/
+*.egg-info/
+pip-wheel-metadata/
+pyvenv.cfg
+.env
+.env.*
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+.mypy_cache/
+.pyre/
+.python-version
+htmlcov/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+pnpm-lock.yaml
+dist/
+build/
+.vite/
+
+# macOS
+.DS_Store
+
+# IDEs / Editors
+.vscode/
+.idea/
+.history/
+
+# Logs
+logs/
+*.log
+
+# Test / coverage
+coverage/
+coverage.*
+
+# Databases
+*.sqlite3
+*.db
+
+# Misc
+*.bak
+*.swp
+
+# Claude
+.claude
+.playwright-mcp
+.mcp.json
+CLAUDE.md
+
+# Agents
+/.agents/
+skills-lock.json
+
+.gitignore
