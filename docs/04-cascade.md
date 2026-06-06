@@ -1,59 +1,57 @@
 # 04 — Cascade Rebase
 
-> 🇮🇹 Italiano · [🇬🇧 English](./en/04-cascade.md)
+> 🇬🇧 English · [🇮🇹 Italiano](../04-cascade.md)
 
-> Il **meccanismo distintivo** del progetto. Quando applichi un'op a
-> monte di celle esistenti, tutte le celle a valle vengono ri-applicate
-> sul nuovo stato — non troncate. Charts incluso.
+> The **distinctive mechanism** of the project. When you apply an op
+> upstream of existing cells, all downstream cells get re-applied on
+> the new state — not truncated. Charts included.
 
-## Indice
-- [4.1 Il problema risolto](#41-il-problema-risolto)
-- [4.2 Modello concettuale](#42-modello-concettuale)
-- [4.3 Implementazione lato client (notebook store)](#43-implementazione-lato-client-notebook-store)
-- [4.4 Tre azioni del notebook store](#44-tre-azioni-del-notebook-store)
+## Index
+- [4.1 The problem solved](#41-the-problem-solved)
+- [4.2 Conceptual model](#42-conceptual-model)
+- [4.3 Client-side implementation (notebook store)](#43-client-side-implementation-notebook-store)
+- [4.4 Three notebook store actions](#44-three-notebook-store-actions)
 - [4.5 Chart-driven filters: replace semantics](#45-chart-driven-filters-replace-semantics)
-- [4.6 Casi limite e gestione errori](#46-casi-limite-e-gestione-errori)
-- [4.7 Esempio end-to-end commentato](#47-esempio-end-to-end-commentato)
+- [4.6 Edge cases and error handling](#46-edge-cases-and-error-handling)
+- [4.7 Annotated end-to-end example](#47-annotated-end-to-end-example)
 
 ---
 
-## 4.1 Il problema risolto
+## 4.1 The problem solved
 
-Versione naive del notebook (prima della cascade):
+Naive notebook (before cascade):
 
 ```
 Cell 0: Root                    300 rows
 Cell 1: filter sales > 100      150 rows
 Cell 2: filter ship_mode=A       30 rows
-Cell 3: histogram of sales       (chart su Cell 2)
+Cell 3: histogram of sales       (chart on Cell 2)
 ```
 
-Adesso applico una nuova op sulla **Cell 0** (es. `sort_by date`).
-Cosa succede?
+Now I apply a new op on **Cell 0** (e.g. `sort_by date`). What happens?
 
-**Versione naive**: Cell 1, 2, 3 vengono *troncate*. Perdo 3 step di
-lavoro. Devo rifare tutto.
+**Naive version**: Cell 1, 2, 3 get *truncated*. I lose 3 steps of
+work. I have to redo everything.
 
-**Versione cascade** (quella che abbiamo):
-1. Cell 0 resta (è la root, non si modifica).
-2. Si **inserisce** una nuova Cell 1 = Cell 0 + sort_by date (300 righe,
-   ordinate).
-3. La vecchia Cell 1 (`filter sales > 100`) viene **rebase**: re-applica
-   `filter sales > 100` sulla nuova Cell 1, diventa Cell 2 con 150 righe
-   (probabilmente ordinate diversamente).
-4. La vecchia Cell 2 (`filter ship_mode=A`) viene rebase su Cell 2,
-   diventa Cell 3 con 30 righe.
-5. La vecchia Cell 3 (histogram) viene **re-renderizzata** con la nuova
-   Cell 3 come `sourceStateId`.
+**Cascade version** (what we have):
+1. Cell 0 stays (it's the root, doesn't get modified).
+2. A new Cell 1 = Cell 0 + sort_by date is **inserted** (300 rows,
+   sorted).
+3. The old Cell 1 (`filter sales > 100`) gets **rebased**: re-applies
+   `filter sales > 100` on the new Cell 1, becomes Cell 2 with 150
+   rows (probably ordered differently).
+4. The old Cell 2 (`filter ship_mode=A`) gets rebased on Cell 2,
+   becomes Cell 3 with 30 rows.
+5. The old Cell 3 (histogram) gets **re-rendered** with the new Cell
+   3 as `sourceStateId`.
 
-Tutto il lavoro di esplorazione preservato. È una **rebase Git
-applicata ai dati**.
+All exploration work preserved. It's a **Git rebase applied to data**.
 
 ---
 
-## 4.2 Modello concettuale
+## 4.2 Conceptual model
 
-### Ogni cella ricorda l'op che l'ha prodotta
+### Each cell remembers the op that produced it
 
 ```ts
 TableCellData {
@@ -65,20 +63,20 @@ TableCellData {
 }
 ```
 
-`opChain` è un **array** perché alcune ops sono "compound" e devono
-essere atomiche dal punto di vista dell'utente:
+`opChain` is an **array** because some ops are "compound" and must be
+atomic from the user's POV:
 
 ```ts
-// Cella prodotta dal brush su scatter (rect su area)
+// Cell produced by scatter brush (rect on area)
 opChain: [
   { op_id: "filter_range", params: { column: "x", min: ..., max: ... } },
   { op_id: "filter_range", params: { column: "y", min: ..., max: ... } },
 ]
 ```
 
-Per la maggior parte delle ops l'array ha un solo elemento.
+For most ops the array has a single element.
 
-### Charts non hanno opChain
+### Charts don't have opChain
 
 ```ts
 ChartCellData {
@@ -89,47 +87,48 @@ ChartCellData {
 }
 ```
 
-I chart sono **leaf**: non avanzano lo stato dati, sono lenti. Per
-re-renderizzarli non serve un chain — basta `op_id` e `opParams`.
+Charts are **leaves**: they don't advance the data state, they're
+lenses. To re-render them you don't need a chain — just `op_id` and
+`opParams`.
 
-### La cascade è "replay"
+### The cascade is a "replay"
 
-Date queste due primitive:
+Given these two primitives:
 
 ```python
 branch(state_id, op_id, params) -> {state_id', count, description}
 execute(op_id, params, from_state_id) -> {spec}
 ```
 
-E un notebook:
+And a notebook:
 
 ```
 [Root, A(opChain_A), B(opChain_B), Chart_C(opId_C, opParams_C), D(opChain_D)]
 ```
 
-Quando inserisco una nuova op X dopo Root:
+When I insert a new op X after Root:
 
 ```
 [Root, X, A', B', Chart_C', D']
 
-dove:
+where:
   X.stateId   = branch(Root.stateId, X)
-  A'.stateId  = branch(X.stateId, opChain_A[0]) [poi opChain_A[1]...]
+  A'.stateId  = branch(X.stateId, opChain_A[0]) [then opChain_A[1]...]
   B'.stateId  = branch(A'.stateId, opChain_B[0]) [...]
   Chart_C'.spec = execute(opId_C, opParams_C, from_state_id=B'.stateId)
   D'.stateId  = branch(B'.stateId, opChain_D[0]) [...]
 ```
 
-**Importante**: i chart NON avanzano lo stato. La D' viene rebasata su
-B' (la tabella prima del chart), non sul chart. Chart_C' usa
+**Important**: charts DO NOT advance state. D' gets rebased on B' (the
+table before the chart), not on the chart. Chart_C' uses
 `sourceStateId = B'.stateId`.
 
 ---
 
-## 4.3 Implementazione lato client (notebook store)
+## 4.3 Client-side implementation (notebook store)
 
-Il codice è in `frontend/src/store/notebook.ts`. Riassunto della
-funzione `applyChainAndCascade`:
+The code is in `frontend/src/store/notebook.ts`. Summary of the
+`applyChainAndCascade` function:
 
 ```ts
 applyChainAndCascade: async (parentIndex, ops, options?) => {
@@ -137,14 +136,14 @@ applyChainAndCascade: async (parentIndex, ops, options?) => {
   const parent = cells[parentIndex];
   if (!parent) return;
 
-  // Charts hanno sourceStateId, tables hanno stateId. Astrai.
+  // Charts have sourceStateId, tables have stateId. Abstract.
   const parentStateId = parent.type === "table" ? parent.stateId : parent.sourceStateId;
   const parentLineage = parent.lineage;
 
   set({ isCascading: true, cascadeError: null });
 
   try {
-    // 1. Applica la chain `ops` sopra il genitore → stato finale
+    // 1. Apply chain `ops` on top of parent → final state
     let curState = parentStateId;
     let lastDesc = "";
     let lastCount = 0;
@@ -167,7 +166,7 @@ applyChainAndCascade: async (parentIndex, ops, options?) => {
       meta: options?.meta,
     };
 
-    // 2. Rebase ogni cella a valle
+    // 2. Rebase every downstream cell
     const newCells: CellData[] = [
       ...cells.slice(0, parentIndex + 1),
       inserted,
@@ -214,7 +213,7 @@ applyChainAndCascade: async (parentIndex, ops, options?) => {
           lineage: [...prevTableLineage, ownStep],
         };
         newCells.push(updated);
-        // prevTableStateId NON cambia: i chart non avanzano lo stato
+        // prevTableStateId DOES NOT change: charts don't advance state
       }
     }
 
@@ -226,33 +225,33 @@ applyChainAndCascade: async (parentIndex, ops, options?) => {
 },
 ```
 
-### Pattern fondamentale: `prevTableStateId`
+### Key pattern: `prevTableStateId`
 
-La variabile più importante della cascade è `prevTableStateId`. Si
-aggiorna **solo** quando si processa una `table` cell. Per i `chart`
-resta lo stesso (il chart si renderizza sopra di esso ma non lo modifica).
+The most important variable in the cascade is `prevTableStateId`. It
+updates **only** when we process a `table` cell. For `chart`s it stays
+the same (the chart renders on top of it but doesn't modify it).
 
-Questo garantisce che ogni cella tabella **branch dalla tabella
-precedente** (non dal chart che potrebbe essere in mezzo).
+This guarantees that every table cell **branches from the previous
+table** (not from the chart that might be in between).
 
-### Pattern fondamentale: lineage immutabile
+### Key pattern: immutable lineage
 
-Ogni cella ricostruisce `lineage = [...prevTableLineage, miaDescrizione]`.
-La lineage non è una proprietà calcolata in render — è **memorizzata**
-e viene aggiornata ad ogni rebase. Così i chip indigo della UI
-(visibili nel header di ogni cella) raccontano sempre la chain corrente.
+Every cell rebuilds `lineage = [...prevTableLineage, myDescription]`.
+The lineage isn't a computed property at render — it's **stored** and
+gets updated on every rebase. So the indigo chips in the UI (visible
+in every cell's header) always tell the current chain.
 
 ---
 
-## 4.4 Tre azioni del notebook store
+## 4.4 Three notebook store actions
 
-| Action | Quando si usa | Effetto |
+| Action | When used | Effect |
 |---|---|---|
-| `applyChainAndCascade(parentIndex, ops, opts?)` | Manipolazione manuale via ManipulationPanel; chart filter "non interactive" | Inserisce + cascade |
-| `applyChainAfterChart(chartIndex, chartId, ops)` | Click su bin/bar/cell di un chart | **Replace** la cella precedente dello stesso chart, poi cascade |
-| `appendChartCell(parentIndex, opId, params)` | Generate dal VisualizationPanel | Inserisce un chart leaf, NO cascade (solo shift) |
+| `applyChainAndCascade(parentIndex, ops, opts?)` | Manual manipulation via ManipulationPanel; non-interactive chart filter | Insert + cascade |
+| `applyChainAfterChart(chartIndex, chartId, ops)` | Click on bin/bar/cell of a chart | **Replace** the previous cell from the same chart, then cascade |
+| `appendChartCell(parentIndex, opId, params)` | Generate from VisualizationPanel | Insert a chart leaf, NO cascade (just shift) |
 
-### `appendChartCell` non fa cascade
+### `appendChartCell` doesn't cascade
 
 ```ts
 appendChartCell: async (parentIndex, opId, params) => {
@@ -269,7 +268,7 @@ appendChartCell: async (parentIndex, opId, params) => {
       cells: [
         ...s.cells.slice(0, parentIndex + 1),
         cell,
-        ...s.cells.slice(parentIndex + 1),    // INSERT, non truncate
+        ...s.cells.slice(parentIndex + 1),    // INSERT, not truncate
       ],
       isCascading: false,
     }));
@@ -277,31 +276,33 @@ appendChartCell: async (parentIndex, opId, params) => {
 },
 ```
 
-**Perché niente cascade**: un chart è leaf. Le celle a valle del parent
-NON dipendono dal chart, dipendono dal parent stesso. Se inserisco un
-chart tra parent e una cella esistente, la cella esistente continua a
-branch dal parent (non dal chart) → niente da rebasare.
+**Why no cascade**: a chart is a leaf. The cells downstream of the
+parent DO NOT depend on the chart, they depend on the parent itself.
+If I insert a chart between parent and an existing cell, the existing
+cell continues to branch from the parent (not from the chart) → nothing
+to rebase.
 
 ---
 
 ## 4.5 Chart-driven filters: replace semantics
 
-Quando l'utente clicca un bin di un istogramma, ChartCellView chiama:
+When the user clicks an istogram bin, ChartCellView calls:
 
 ```ts
 applyChainAfterChart(cellIndex, cell.id, [{op_id: "filter_range", params: {...}}]);
 ```
 
-Cosa fa `applyChainAfterChart` di diverso da `applyChainAndCascade`?
+What does `applyChainAfterChart` do differently from
+`applyChainAndCascade`?
 
 ```ts
 applyChainAfterChart: async (chartIndex, chartId, ops) => {
   const cells = get().cells;
   const next = cells[chartIndex + 1];
 
-  // Se la cella subito dopo questo chart è ANCHE una chart-derived filter
-  // dello STESSO chart, eliminala prima di cascadare. L'utente vuole
-  // "swappare" la selezione, non accumulare filtri.
+  // If the cell right after this chart is ALSO a chart-derived filter
+  // from the SAME chart, drop it before cascading. The user wants to
+  // "swap" the selection, not accumulate filters.
   if (next && next.type === "table" && next.meta?.fromChartId === chartId) {
     set({
       cells: [
@@ -311,15 +312,15 @@ applyChainAfterChart: async (chartIndex, chartId, ops) => {
     });
   }
 
-  // Adesso cascade normalmente, marchiando la nuova cella come
-  // "venuta da questo chart"
+  // Now cascade normally, marking the new cell as
+  // "came from this chart"
   await get().applyChainAndCascade(chartIndex, ops, {
     meta: { fromChartId: chartId },
   });
 },
 ```
 
-### Esempio
+### Example
 
 ```
 Cell 0: Root
@@ -328,19 +329,19 @@ Cell 2: filter price ∈ [56, 78]    meta.fromChartId=H1
 Cell 3: filter_not_null discount_pct  (manual, no meta)
 ```
 
-User clicca un altro bin sull'istogramma → `[10, 33]`.
+User clicks another bin on the histogram → `[10, 33]`.
 
 `applyChainAfterChart(1, "H1", [filter_range [10,33]])`:
-1. `next = cells[2]` ha `meta.fromChartId === "H1"` → **rimuove**
-   cells[2] dall'array.
-2. Notebook diventa `[Root, Histogram, filter_not_null]` (cell_3
+1. `next = cells[2]` has `meta.fromChartId === "H1"` → **removes**
+   cells[2] from the array.
+2. Notebook becomes `[Root, Histogram, filter_not_null]` (cell_3
    shifted to index 2).
 3. `applyChainAndCascade(1, [filter_range [10,33]], {meta:{fromChartId:"H1"}})` →
-   inserisce nuova filter [10,33] dopo l'istogramma con il marker.
-4. Cascade: cell shifted (filter_not_null) si rebasa sopra la nuova
-   filter [10,33].
+   inserts new filter [10,33] after the histogram with the marker.
+4. Cascade: shifted cell (filter_not_null) gets rebased on top of the
+   new filter [10,33].
 
-**Risultato**:
+**Result**:
 ```
 Cell 0: Root
 Cell 1: Histogram                                (unchanged)
@@ -348,12 +349,12 @@ Cell 2: filter price ∈ [10, 33]    meta.fromChartId=H1   (replaced)
 Cell 3: filter_not_null discount_pct (rebased on Cell 2)
 ```
 
-Cell 3 è ancora valida — il filter not null funziona regardless del
-range di prezzo. **No `0 rows`.**
+Cell 3 is still valid — filter_not_null works regardless of price
+range. **No `0 rows`.**
 
-### Senza questa logica…
+### Without this logic…
 
-`applyChainAndCascade` plain produrrebbe:
+Plain `applyChainAndCascade` would produce:
 ```
 Cell 0: Root
 Cell 1: Histogram
@@ -362,88 +363,93 @@ Cell 3: filter price ∈ [56, 78]   (rebased on Cell 2)  ← ZERO ROWS!
 Cell 4: filter_not_null            (rebased on Cell 3)  ← ZERO ROWS!
 ```
 
-Le due selezioni sono mutualmente esclusive ([10,33] ∩ [56,78] = ∅) →
-catastrofico zero. Era il bug originale.
+The two selections are mutually exclusive ([10,33] ∩ [56,78] = ∅) →
+catastrophic zero. That was the original bug.
 
-### Solo le filter "interattive" sono replaceable
+### Only "interactive" filters are replaceable
 
-Se l'utente fa la stessa filter `price ∈ [10,33]` via ManipulationPanel
-manuale, NON ha `meta.fromChartId`, quindi `applyChainAfterChart` la
-lascerebbe stare (cercherebbe solo cell con quel marker).
+If the user does the same `price ∈ [10,33]` filter manually via
+ManipulationPanel, it does NOT have `meta.fromChartId`, so
+`applyChainAfterChart` would leave it alone (it only looks for cells
+with that marker).
 
-Le filter manuali sono trattate come "step intenzionali" che l'utente
-ha esplicitamente messo — non vanno cancellati silenziosamente.
+Manual filters are treated as "intentional steps" the user has
+explicitly added — they shouldn't be silently deleted.
 
 ---
 
-## 4.6 Casi limite e gestione errori
+## 4.6 Edge cases and error handling
 
-### Op rebase fallisce a metà cascade
+### Op rebase fails mid-cascade
 
-Esempio: la nuova op a monte è `drop_column sales`. Una cella a valle
-ha `opChain: [{filter_range, params:{column:"sales", min:100, max:5000}}]`.
-Quando proviamo a re-applicare il filter sulla colonna che non esiste
-più → backend ritorna 400 "unable to find column 'sales'".
+Example: the new upstream op is `drop_column sales`. A downstream
+cell has `opChain: [{filter_range, params:{column:"sales", min:100, max:5000}}]`.
+When we try to re-apply the filter on the column that no longer
+exists → backend returns 400 "unable to find column 'sales'".
 
-Il codice cattura nel `try/catch` esterno, scrive `cascadeError`, e
-**ferma** la cascade dopo aver salvato le celle già rebasate con successo.
+The code catches in the outer `try/catch`, writes `cascadeError`, and
+**stops** the cascade after saving the cells already rebased
+successfully.
 
 ```
-[Root, X(new), A'(rebased ok), B'(rebased ok), <FALLITO da qui in poi>]
+[Root, X(new), A'(rebased ok), B'(rebased ok), <FAILED from here on>]
 ```
 
-Le celle dalla failed in giù vengono **scartate**. L'utente vede:
-- nuovo notebook con le celle rebased correttamente
-- rosso `cascadeError` displayed nei panel manipulation/visualization
-- toast con messaggio del backend
+The cells from the failure onwards get **dropped**. The user sees:
+- new notebook with the correctly rebased cells
+- red `cascadeError` displayed in the manipulation/visualization
+  panels
+- toast with the backend message
 
-L'utente può rimuovere la cella problematica e ricominciare, oppure
-modificare la op a monte.
+The user can remove the problematic cell and start over, or modify
+the upstream op.
 
-### `opChain` vuoto (legacy)
+### Empty `opChain` (legacy)
 
-Se per qualche motivo una cella ha `opChain: []` (es. stato persisted
-da una versione vecchia che non aveva ancora opChain), il loop fa
-`break` e non rebasa nulla a valle. Le celle dopo vengono perdute.
+If for some reason a cell has `opChain: []` (e.g. state persisted
+from a version that didn't have opChain yet), the loop `break`s and
+doesn't rebase anything downstream. Cells after it get lost.
 
-In pratica: con `version: 3` del persist e `migrate` che azzera tutto,
-questa situazione non dovrebbe mai capitare. Ma il safety net c'è.
+In practice: with `version: 3` of the persist and `migrate` clearing
+everything, this situation should never happen. But the safety net
+is there.
 
-### Chart con `opParams` mancanti
+### Chart with missing `opParams`
 
-Se una `ChartCellData` non ha `opParams` (legacy), `executeFromState`
-non ha cosa passare. Lo skippiamo:
+If a `ChartCellData` doesn't have `opParams` (legacy),
+`executeFromState` has nothing to pass. We skip it:
 ```ts
 if (!old.opId || !old.opParams) break;
 ```
 
-Stesso esito del caso precedente: cascade fermata, celle a valle perse.
+Same outcome as the previous case: cascade halted, downstream cells
+lost.
 
-### `isCascading` come signal UI
+### `isCascading` as UI signal
 
 ```ts
 set({ isCascading: true });
-// ... await sequence di branch/execute ...
+// ... await sequence of branch/execute ...
 set({ isCascading: false });
 ```
 
-I componenti che mostrano bottoni "Apply" / "Generate" leggono questo
-flag e mostrano "Applicando in cascata…" / "Generando…" + disabled.
+Components that show "Apply" / "Generate" buttons read this flag and
+show "Applying cascade…" / "Generating…" + disabled state.
 
-Durante la cascade le altre azioni utente sono UI-disabled (i bottoni
-sono `disabled={isCascading}`). In un'app più sofisticata si potrebbe
-permettere cancellazione (`AbortController` su axios) ma per ora la
-cascade è veloce ($\le$ 200ms su dataset modesti).
+During cascade other user actions are UI-disabled (buttons are
+`disabled={isCascading}`). In a more sophisticated app you could
+allow cancellation (`AbortController` on axios) but for now cascade
+is fast (≤ 200ms on modest datasets).
 
 ---
 
-## 4.7 Esempio end-to-end commentato
+## 4.7 Annotated end-to-end example
 
-Setup iniziale:
-- Carico `orders.csv` (5009 righe)
-- Faccio filter `sales > 100` → 2876 righe
-- Genero histogram di `sales` → chart cell
-- Faccio filter `ship_mode = "Standard Class"` sotto il chart → 2018 righe
+Initial setup:
+- Load `orders.csv` (5009 rows)
+- Filter `sales > 100` → 2876 rows
+- Generate histogram of `sales` → chart cell
+- Filter `ship_mode = "Standard Class"` below the chart → 2018 rows
 
 Notebook:
 ```
@@ -451,28 +457,29 @@ Notebook:
 [1] sales > 100   2876 rows  opChain=[{filter_range, sales [100, 1e9]}]
 [2] hist(sales)              opId=viz_histogram, sourceStateId=cells[1]
 [3] ship_mode=Std 2018 rows  opChain=[{filter_equals, ship_mode "Standard Class"}]
-                             (parent table = cells[1], non cells[2] perché chart è leaf)
+                             (parent table = cells[1], not cells[2] because chart is leaf)
 ```
 
-User: clicco su un bin del chart `[200, 250]` → trigger
+User: I click a bin on the chart `[200, 250]` → triggers
 `applyChainAfterChart(2, H1, [filter_range sales [200,250]])`.
 
-Step 1 — pulizia: `next = cells[3]`. La sua `meta?.fromChartId` è
-**undefined** (è un filter manuale, non da chart). Quindi NON la rimuoviamo.
+Step 1 — cleanup: `next = cells[3]`. Its `meta?.fromChartId` is
+**undefined** (it's a manual filter, not from the chart). So we DO NOT
+remove it.
 
 Step 2 — applyChainAndCascade(2, [filter_range [200,250]], {meta:{fromChartId:"H1"}}):
 - `parent = cells[2]` (chart). `parentStateId = chart.sourceStateId = cells[1].stateId`.
 - `branch(cells[1].stateId, "filter_range", {sales [200,250]})` →
-  nuovo state `Y` con count=410.
+  new state `Y` with count=410.
 - Inserted cell: `{stateId: Y, opChain: [filter_range [200,250]], meta: {fromChartId:"H1"}}`
-  inserito a indice 3.
+  inserted at index 3.
 
-Step 3 — cascade. Cella vecchia a indice 3 era `ship_mode=Std`.
-- `branch(Y, "filter_equals", {ship_mode "Standard Class"})` → state `Z`
-  con count=287.
-- Updated cell: `{stateId: Z, opChain: stesso, lineage: [...new]}`.
+Step 3 — cascade. Old cell at index 3 was `ship_mode=Std`.
+- `branch(Y, "filter_equals", {ship_mode "Standard Class"})` → state
+  `Z` with count=287.
+- Updated cell: `{stateId: Z, opChain: same, lineage: [...new]}`.
 
-Notebook finale:
+Final notebook:
 ```
 [0] Root          5009 rows
 [1] sales > 100   2876 rows
@@ -481,16 +488,17 @@ Notebook finale:
 [4] ship_mode=Std    287 rows                      (rebased)
 ```
 
-L'utente vede istantaneamente il chart inalterato (è la stessa lente),
-una nuova filter cell che rappresenta la sua selezione, e la cella
-ship_mode aggiornata col nuovo count.
+The user sees instantly: the chart unchanged (it's the same lens),
+a new filter cell representing his selection, and the ship_mode cell
+updated with the new count.
 
-Se ora clicco un altro bin `[500, 600]`:
-- `next = cells[3]` ha `meta.fromChartId === H1` → **rimossa**.
-- Notebook temporaneamente: `[Root, ..., hist, ship_mode=Std]`.
-- Cascade con la nuova filter inserisce a indice 3, rebasa ship_mode → indice 4.
+If now I click another bin `[500, 600]`:
+- `next = cells[3]` has `meta.fromChartId === H1` → **removed**.
+- Notebook temporarily: `[Root, ..., hist, ship_mode=Std]`.
+- Cascade with the new filter inserts at index 3, rebases ship_mode →
+  index 4.
 
-Notebook stabile:
+Stable notebook:
 ```
 [0] Root
 [1] sales > 100
@@ -499,5 +507,5 @@ Notebook stabile:
 [4] ship_mode=Std    (rebased over the new filter)
 ```
 
-Click successivi sull'istogramma rimpiazzano sempre cells[3], mai
-accumulano. Le celle "manuali" (cells[4]) seguono come d'incanto.
+Subsequent clicks on the histogram always replace cells[3], never
+accumulate. The "manual" cells (cells[4]) follow as if by magic.

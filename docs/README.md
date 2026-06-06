@@ -1,103 +1,104 @@
-# Documentazione — Visual Notebook (`va_project`)
+# Documentation — Visual Notebook (`va_project`)
 
-> 🇮🇹 Italiano · [🇬🇧 English](./en/README.md)
+> 🇬🇧 English · [🇮🇹 Italiano](../README.md)
 
-Strumento no-code di esplorazione interattiva di CSV/TSV/Parquet, ispirato a
-Jupyter ma orientato all'**analisi visiva** invece che al codice. L'utente
-costruisce un *notebook* di celle (tabelle e grafici) che si **rebasano in
-cascata** quando una manipolazione viene applicata su un nodo a monte.
+No-code interactive exploration tool for CSV / TSV / Parquet, inspired
+by Jupyter but oriented to **visual analysis** instead of code. The
+user builds a *notebook* of cells (tables and charts) that **rebase in
+cascade** when a manipulation is applied to an upstream node.
 
-## Indice
+## Index
 
-| # | Documento | Cosa trovi |
+| # | Document | What you'll find |
 |---|---|---|
-| 01 | [Architettura](./01-architettura.md) | Vista d'insieme: 4 strati, stack tech, decisioni di design, struttura cartelle |
-| 02 | [Backend](./02-backend.md) | File per file della parte Python: `data/`, `domain/`, `viz/`, `api/`, `controller.py`, `session.py`, `main.py` |
-| 03 | [Frontend](./03-frontend.md) | File per file della parte React: `api/`, `store/`, `lib/`, `components/`, `App.tsx`, `main.tsx` |
-| 04 | [Cascade Rebase](./04-cascade.md) | Deep-dive sul meccanismo di "operations in cascata" che rebasa tutte le celle a valle quando applichi un'op a monte |
-| 05 | [Catalogo Operazioni](./05-operazioni.md) | Le 21 operazioni esposte (Data, Filter, Group, Visualize, View) con segnatura dei parametri e semantica esatta |
+| 01 | [Architecture](./01-architecture.md) | Big picture: the 4 layers, tech stack, design decisions, folder layout |
+| 02 | [Backend](./02-backend.md) | File-by-file walkthrough of the Python side: `data/`, `domain/`, `viz/`, `api/`, `controller.py`, `session.py`, `main.py` |
+| 03 | [Frontend](./03-frontend.md) | File-by-file walkthrough of the React side: `api/`, `store/`, `lib/`, `components/`, `App.tsx`, `main.tsx` |
+| 04 | [Cascade Rebase](./04-cascade.md) | Deep-dive into the "operations cascade" mechanism that rebases all downstream cells when you apply an op upstream |
+| 05 | [Operations Catalog](./05-operations.md) | The 21 exposed operations (Data, Filter, Group, Visualize, View) with parameter signatures and exact semantics |
 
-## TL;DR per chi ha fretta
+## TL;DR for the impatient
 
 ```
               UPLOAD CSV
                   ↓
        ┌──────────────────────┐
-       │ Cella 0: Root        │  ← LazyFrame originale
+       │ Cell 0: Root         │  ← original LazyFrame
        └──────┬───────────────┘
               │  + filter sales > 100
        ┌──────▼───────────────┐
-       │ Cella 1: filtered    │  ← stato derivato
+       │ Cell 1: filtered     │  ← derived state
        └──────┬───────────────┘
               │  + viz histogram
        ┌──────▼───────────────┐
-       │ Cella 2: chart       │  ← leaf, non avanza lo stato
+       │ Cell 2: chart        │  ← leaf, doesn't advance state
        └──────────────────────┘
 ```
 
-Quando applichi una nuova op sulla **cella 0** (es. `sort_by`), la cella 0
-non cambia (è l'upload), ma viene **inserita** una nuova cella subito sotto
-e le celle 1 e 2 vengono **rebasate** sopra di essa: la cella 1 ri-applica
-il suo `filter sales > 100` sul nuovo stato, la cella 2 ri-renderizza
-l'istogramma. Tutto in una singola Promise lato frontend, una catena di
-chiamate `/api/branch` e `/api/execute` lato backend.
+When you apply a new op on **cell 0** (e.g. `sort_by`), cell 0 doesn't
+change (it's the upload), but a new cell is **inserted** right below it
+and cells 1 and 2 are **rebased** on top: cell 1 re-applies its
+`filter sales > 100` on the new state, cell 2 re-renders the histogram.
+All in a single Promise on the frontend, a chain of `/api/branch` and
+`/api/execute` calls on the backend.
 
-Se ti interessa solo capire questo meccanismo → [04-cascade.md](./04-cascade.md).
+If you only want to understand this mechanism → [04-cascade.md](./04-cascade.md).
 
-## Comandi rapidi
+## Quick commands
 
 ```bash
-# Setup (uv crea il .venv automaticamente al primo run)
+# Setup (uv creates .venv automatically on first run)
 cd va_project
 uv sync
 
-# Backend (porta 8000, OpenAPI su /docs)
+# Backend (port 8000, OpenAPI on /docs)
 uv run uvicorn visual_notebook.main:app --reload --port 8000
 
-# Frontend (porta 5173, Vite proxa /api/* sul backend)
+# Frontend (port 5173, Vite proxies /api/* to backend)
 cd frontend
 npm install
 npm run dev
 
-# Test backend
+# Backend tests
 uv run pytest backend
 ```
 
-## Stack tecnologico
+## Tech stack
 
-| Layer | Tecnologia | Perché |
+| Layer | Technology | Why |
 |---|---|---|
-| Data engine | **Polars** (lazy) | Single-user, in-process; lazy lascia comporre i piani senza materializzare |
-| Backend HTTP | **FastAPI** + Pydantic | Tipato, OpenAPI gratis, performante con uvicorn |
-| Pacchetto Python | **uv** workspace | Gestisce venv + lockfile + dipendenze in modo unificato |
-| Frontend | **React 18** + TS + **Vite** | Standard moderno, HMR rapido, type-safety end-to-end |
-| Stato server | **TanStack Query 5** | Cache + invalidazione intelligente, retry, dedupe |
-| Stato UI | **Zustand 4** | Più leggero di Redux, perfetto per stato locale del notebook |
-| Drag-and-drop | **@dnd-kit/core** | Accessibile, type-safe, granulare nei sensori |
-| Charts | **Apache ECharts** (via `echarts-for-react`) | API più semplice di BokehJS, moltissimi chart out of the box |
-| Mappe | **Leaflet** (via `react-leaflet`) | Standard del settore, tile providers liberi |
-| Styling | **Tailwind CSS 3** | Utility-first, palette light minimalist custom in `tailwind.config.js` |
+| Data engine | **Polars** (lazy) | Single-user, in-process; lazy lets us compose plans without materializing |
+| Backend HTTP | **FastAPI** + Pydantic | Typed, free OpenAPI, fast with uvicorn |
+| Python packaging | **uv** workspace | Manages venv + lockfile + dependencies in one tool |
+| Frontend | **React 18** + TS + **Vite** | Modern standard, fast HMR, end-to-end type safety |
+| Server state | **TanStack Query 5** | Smart cache + invalidation, retry, dedupe |
+| UI state | **Zustand 4** | Lighter than Redux, perfect for local notebook state |
+| Drag and drop | **@dnd-kit/core** | Accessible, type-safe, granular sensor control |
+| Charts | **Apache ECharts** (via `echarts-for-react`) | Simpler API than BokehJS, lots of out-of-the-box charts |
+| Maps | **Leaflet** (via `react-leaflet`) | Industry standard, free tile providers |
+| Styling | **Tailwind CSS 3** | Utility-first, custom light minimalist palette in `tailwind.config.js` |
 
-## Convenzioni della codebase
+## Codebase conventions
 
-- **Italiano** nei commenti UI / messaggi user-facing; **inglese** in docstring,
-  identifier, log diagnostici.
-- **Layer puri**: `data/` non importa nulla di sopra; `domain/` non importa
-  da `api/` o `frontend/`; le funzioni viz sono pure `(df, params) -> dict`.
-- **Sessioni cookie-based** (cookie `vn_session`), in-memory dict server-side.
-  Una sessione per browser tab.
-- **Persistenza notebook**: localStorage (Zustand persist), versionata.
-  Bumpando `version` nello store invalida automaticamente lo stato vecchio.
-- **History tree** server-side tiene tutti gli stati (root → derivati);
-  il frontend ne mostra una *vista lineare* (notebook flat).
+- **English** in docstrings, identifiers, diagnostic logs. **Italian or
+  English** in user-facing UI text (currently mostly Italian).
+- **Pure layers**: `data/` imports nothing from above; `domain/` doesn't
+  import from `api/` or frontend; viz functions are pure
+  `(df, params) -> dict`.
+- **Cookie-based sessions** (`vn_session` cookie), in-memory dict on the
+  server. One session per browser tab.
+- **Notebook persistence**: localStorage (Zustand persist), versioned.
+  Bumping `version` in the store automatically invalidates old state.
+- **History tree** server-side keeps every state (root → derived); the
+  frontend shows a *linear view* of it (flat notebook).
 
-## Glossario
+## Glossary
 
-| Termine | Significato |
+| Term | Meaning |
 |---|---|
-| **State** | Un nodo nel `History` tree server-side. Ha un `id` univoco, un `LazyFrame` Polars associato, una `description` e un `parent`. Cell istante immutabile dei dati a quel punto. |
-| **Cell** | Un'unità del notebook frontend. `TableCellData` punta a uno `state_id`; `ChartCellData` ha uno spec ECharts (o map payload) e un `sourceStateId`. |
-| **`opChain`** | Lista di step `{op_id, params}` che hanno prodotto una cella tabella dal genitore. Replay-abile per la cascade. |
-| **Cascade** | Re-applicare gli `opChain` di tutte le celle figlie su un nuovo stato genitore quando una nuova op è inserita a monte. |
-| **fromChartId** | Tag che marca le celle filtro nate da un click interattivo su un chart (bin istogramma, brush scatter, ecc.). Un click successivo sullo stesso chart **rimpiazza** invece di accumulare. |
-| **Branch / branch_from** | Nel `History` tree, applicare un'op partendo da uno `state_id` specifico (non necessariamente quello "corrente"). Crea un nuovo nodo figlio di quello stato. |
+| **State** | A node in the server-side `History` tree. Has a unique `id`, an associated Polars `LazyFrame`, a `description` and a `parent`. Immutable snapshot of the data at that point. |
+| **Cell** | A unit of the frontend notebook. `TableCellData` points to a `state_id`; `ChartCellData` has an ECharts spec (or map payload) and a `sourceStateId`. |
+| **`opChain`** | List of `{op_id, params}` steps that produced a table cell from its parent. Replayable for cascade rebase. |
+| **Cascade** | Re-applying the `opChain` of all child cells on a new parent state when a new op is inserted upstream. |
+| **fromChartId** | A tag marking filter cells born from an interactive click on a chart (histogram bin, scatter brush, etc.). A subsequent click on the same chart **replaces** that cell instead of stacking. |
+| **Branch / branch_from** | In the `History` tree, applying an op starting from a specific `state_id` (not necessarily the "current" one). Creates a new child node of that state. |

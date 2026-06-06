@@ -1,22 +1,22 @@
 # 03 — Frontend
 
-> 🇮🇹 Italiano · [🇬🇧 English](./en/03-frontend.md)
+> 🇬🇧 English · [🇮🇹 Italiano](../03-frontend.md)
 
-> Walkthrough modulo per modulo della parte React/TypeScript.
-> Ordine di lettura consigliato: api → store → lib → components → App.
+> Module-by-module walkthrough of the React/TypeScript side.
+> Suggested reading order: api → store → lib → components → App.
 
-## Indice
-- [3.1 `main.tsx` — entry React](#31-maintsx--entry-react)
+## Index
+- [3.1 `main.tsx` — React entry](#31-maintsx--react-entry)
 - [3.2 `App.tsx` — root + DnD context](#32-apptsx--root--dnd-context)
-- [3.3 `api/` — client HTTP + hook + tipi](#33-api--client-http--hook--tipi)
+- [3.3 `api/` — HTTP client + hooks + types](#33-api--http-client--hooks--types)
 - [3.4 `store/` — Zustand stores](#34-store--zustand-stores)
-- [3.5 `lib/` — helper puri](#35-lib--helper-puri)
+- [3.5 `lib/` — pure helpers](#35-lib--pure-helpers)
 - [3.6 `components/` — UI](#36-components--ui)
-- [3.7 Styling: Tailwind + classi semantiche](#37-styling-tailwind--classi-semantiche)
+- [3.7 Styling: Tailwind + semantic classes](#37-styling-tailwind--semantic-classes)
 
 ---
 
-## 3.1 `main.tsx` — entry React
+## 3.1 `main.tsx` — React entry
 
 ```tsx
 const queryClient = new QueryClient({
@@ -38,13 +38,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 );
 ```
 
-- **`StrictMode`** in dev fa doppio-render dei componenti per catturare
-  effetti collaterali. In prod è no-op.
-- **`QueryClient` config**: `staleTime: 0` (ogni query è "stale" subito,
-  refetch ad ogni invalidate), `refetchOnWindowFocus: false` (non
-  ricaricare automaticamente quando torno sul tab — confonderebbe in
-  un'app che modifica lo stato lato server), `retry: false` (errori
-  vengono mostrati subito invece di insistere).
+- **`StrictMode`** in dev double-renders components to catch
+  side effects. In production it's a no-op.
+- **`QueryClient` config**: `staleTime: 0` (every query is "stale"
+  immediately, refetch on every invalidate), `refetchOnWindowFocus:
+  false` (don't auto-reload when I come back to the tab — confusing in
+  an app that mutates server state), `retry: false` (errors surface
+  immediately instead of being retried).
 
 ---
 
@@ -89,62 +89,63 @@ export default function App() {
 }
 ```
 
-### Tre stati di App
+### Three App states
 
 1. **`session === undefined`** → loading "Connecting…"
 2. **`!session.has_data`** → drop-zone `<UploadPanel>`
-3. **dataset caricato** → notebook con DndContext
+3. **dataset loaded** → notebook with DndContext
 
-### useEffect 1: inizializzazione root cell
+### useEffect 1: root cell initialisation
 
-Dopo l'upload, `useHistory()` torna l'albero degli stati. Trova il root
-(`parent_id === null`) e lo trasforma in una `TableCellData` con
-`opChain: []` (la root non viene da un'op). Salvato in `notebook.cells[0]`.
+After upload, `useHistory()` returns the state tree. Find the root
+(`parent_id === null`) and turn it into a `TableCellData` with
+`opChain: []` (the root doesn't come from an op). Saved in
+`notebook.cells[0]`.
 
-### useEffect 2: clear su reset
+### useEffect 2: clear on reset
 
-Se la sessione perde `has_data` (l'utente clicca "Load different file" →
-backend resetta) e ci sono celle in localStorage, le **azzera**.
+If the session loses `has_data` (user clicks "Load different file" →
+backend resets) and there are cells in localStorage, clear them.
 
 ### useEffect 3: detect server restart
 
-Se il `notebook.cells[0].stateId` non corrisponde più al root del backend
-(succede dopo che il backend si è riavviato e ha generato nuovi UUID),
-azzera. Senza questo, il frontend manderebbe richieste con stateId che
-non esistono più → 404.
+If `notebook.cells[0].stateId` no longer matches the backend root
+(happens after backend restart with new UUIDs), clear. Without this,
+the frontend would send requests with stateIds that don't exist
+anymore → 404.
 
 ### DnD context
 
-`@dnd-kit/core` è il provider. Ascolta `onDragStart`/`onDragEnd`. Quando
-una colonna chip viene trascinata su un drop slot:
+`@dnd-kit/core` is the provider. Listens to `onDragStart`/`onDragEnd`.
+When a column chip is dragged onto a drop slot:
 
 ```tsx
 const onDragEnd = (e: DragEndEvent) => {
   const dragged = e.active.data.current;       // {kind: "column", column, type}
   const target = e.over?.data.current;          // {kind: "vp-slot", cellId, slotName, accepts}
 
-  if (target.cellId !== vizCellId) return;      // solo lo slot del viz panel attivo
+  if (target.cellId !== vizCellId) return;      // only the active viz panel's slot
   if (target.accepts !== "any" && dragged.type !== target.accepts) {
-    setError(`Tipo incompatibile: ${dragged.column} è ${dragged.type}, lo slot vuole ${target.accepts}.`);
+    setError(`Type mismatch: ${dragged.column} is ${dragged.type}, slot wants ${target.accepts}.`);
     return;
   }
   setSlot(target.slotName, dragged.column, dragged.type);
 };
 ```
 
-`<DragOverlay>` mostra una preview del chip mentre lo trascini, con
-classe portal-style che rispetta gli stili del chip originale.
+`<DragOverlay>` shows a preview of the chip while you drag, with
+portal-style classes that respect the original chip's styles.
 
 ---
 
-## 3.3 `api/` — client HTTP + hook + tipi
+## 3.3 `api/` — HTTP client + hooks + types
 
 ### `api/client.ts`
 
 ```ts
 export const http = axios.create({
   baseURL: "/api",
-  withCredentials: true,    // INVIA il cookie vn_session
+  withCredentials: true,    // SENDS the vn_session cookie
   timeout: 30_000,
 });
 
@@ -155,12 +156,12 @@ http.interceptors.response.use((r) => r, (err) => {
 });
 ```
 
-L'interceptor traduce gli errori HTTP in messaggi leggibili: il backend
-ritorna `{detail: "..."}` per ogni 4xx/5xx, e noi sostituiamo il messaggio
-generico di axios con quel testo. Così `error.message` nel toast è
-sempre il vero messaggio Python.
+The interceptor translates HTTP errors into readable messages: the
+backend returns `{detail: "..."}` for every 4xx/5xx, and we replace
+axios's generic message with that text. So `error.message` in the
+toast is always the real Python message.
 
-### Funzioni helper imperative
+### Imperative helpers
 
 ```ts
 export async function branchOp(stateId, opId, params): Promise<ExecuteResponse> {
@@ -171,13 +172,13 @@ export async function executeFromState(opId, params, fromStateId): Promise<Execu
 }
 ```
 
-Usate dal **notebook store** durante la cascade — quando devi fare 5
-chiamate API in sequenza, `useMutation` di TanStack Query è scomodo
-(mescola gestione stato e retry); meglio chiamare axios direttamente.
+Used by the **notebook store** during cascade — when you have to make 5
+API calls in sequence, TanStack Query's `useMutation` is awkward (it
+mixes state and retry management); cleaner to call axios directly.
 
 ### `api/hooks.ts`
 
-Tutti i `useXxx()` per ogni endpoint, costruiti su TanStack Query.
+All `useXxx()` hooks for each endpoint, built on TanStack Query.
 
 ```ts
 const K = {
@@ -202,29 +203,30 @@ export function usePreview(sid, n=50, off=0) {
 }
 export function useHistory(enabled) { ... }
 export function useColumnStats(col, sid, enabled=true) {
-  return useQuery({..., staleTime: 60_000});  // distinct values cambiano poco
+  return useQuery({..., staleTime: 60_000});  // distinct values rarely change
 }
 
 // Mutations
 export function useUpload()       { ... onSuccess: invalidate session+history }
 export function useExecuteFrom()  { ... mutation per /execute }
 export function useBranchFrom()   { ... mutation per /branch }
-export function useReset()        { ... onSuccess: invalidateQueries() (tutto) }
+export function useReset()        { ... onSuccess: invalidateQueries() (everything) }
 ```
 
-**Tre dettagli importanti**:
-1. **Query key strategy**: include `stateId` perché lo *stesso* `useSchema`
-   chiamato da celle diverse deve avere cache distinte (ogni cella ha
-   uno stato proprio).
-2. **`staleTime: Infinity` per `useOperations`**: il catalog operazioni
-   è statico a runtime, non serve mai refetcharlo.
-3. **`placeholderData: (prev) => prev` su `usePreview`**: durante il
-   cambio pagina la table non flickera, mostra la pagina vecchia con
-   opacità ridotta finché arriva la nuova.
+**Three important details**:
+1. **Query key strategy**: includes `stateId` because the *same*
+   `useSchema` called by different cells must have distinct caches
+   (each cell has its own state).
+2. **`staleTime: Infinity` for `useOperations`**: the operation
+   catalog is static at runtime, no need to ever refetch it.
+3. **`placeholderData: (prev) => prev` on `usePreview`**: during page
+   change the table doesn't flicker, it shows the old page with
+   reduced opacity until the new one arrives.
 
 ### `api/types.ts`
 
-Mirror dei Pydantic backend in TypeScript. Tipo chiave per il notebook:
+Mirror of the backend Pydantic models in TypeScript. Key type for the
+notebook:
 
 ```ts
 export interface OpStep {
@@ -233,7 +235,7 @@ export interface OpStep {
 }
 
 export interface CellMeta {
-  fromChartId?: string;   // tag per cascade-replace (vedi 04-cascade.md)
+  fromChartId?: string;   // tag for cascade-replace (see 04-cascade.md)
 }
 
 export interface TableCellData {
@@ -242,8 +244,8 @@ export interface TableCellData {
   stateId: string;          // → server-side State.id
   description: string;
   rowCount: number;
-  lineage: string[];        // descrizioni di tutti i passi fino a qui
-  opChain: OpStep[];        // ops che hanno prodotto questa cella dal genitore
+  lineage: string[];        // descriptions of every step up to here
+  opChain: OpStep[];        // ops that produced this cell from its parent
   meta?: CellMeta;
 }
 
@@ -253,7 +255,7 @@ export interface ChartCellData {
   opId: string;             // viz_histogram, viz_map, ...
   opParams: Record<string, unknown>;
   spec: Record<string, unknown>;   // ECharts option dict | MapPayload
-  sourceStateId: string;    // → tabella da cui sono renderizzato
+  sourceStateId: string;    // → table this chart was rendered from
   lineage: string[];
 }
 
@@ -264,7 +266,7 @@ export type CellData = TableCellData | ChartCellData;
 
 ## 3.4 `store/` — Zustand stores
 
-Due store distinti, **non** condividono stato.
+Two distinct stores, **not** sharing state.
 
 ### `store/notebook.ts`
 
@@ -284,52 +286,52 @@ interface NotebookState {
 
 #### `applyChainAndCascade(parentIndex, ops, options?)`
 
-Il cuore. Vedi [04-cascade.md](./04-cascade.md) per il deep dive.
+The core. See [04-cascade.md](./04-cascade.md) for the deep dive.
 
-Sintesi:
-1. Prende `parent = cells[parentIndex]` (può essere table O chart cell —
-   leggiamo `stateId` se table, `sourceStateId` se chart).
-2. Applica `ops` in catena su `parent.stateId` con `branchOp` →
-   stato finale, `count`, `description`.
-3. Crea una `TableCellData` con `opChain: ops, meta: options?.meta`.
-4. **Cascade**: per ogni cella `cells[parentIndex+1..]` re-applica il
-   suo `opChain` (table) o re-esegue la viz (chart) sul nuovo stato.
-5. Se una rebase fallisce → ferma la cascade, scrive in `cascadeError`,
-   tronca tutto da quel punto in giù.
-6. Setta `isCascading: false` alla fine (success o fail).
+Summary:
+1. Take `parent = cells[parentIndex]` (can be table OR chart cell —
+   we read `stateId` if table, `sourceStateId` if chart).
+2. Apply `ops` chained on `parent.stateId` with `branchOp` →
+   final state, `count`, `description`.
+3. Create a `TableCellData` with `opChain: ops, meta: options?.meta`.
+4. **Cascade**: for every cell in `cells[parentIndex+1..]` re-apply
+   its `opChain` (table) or re-execute the viz (chart) on the new
+   state.
+5. If a rebase fails → halt cascade, write `cascadeError`, drop
+   everything from there down.
+6. Set `isCascading: false` at the end (success or fail).
 
 #### `applyChainAfterChart(chartIndex, chartId, ops)`
 
-Versione speciale per i filter prodotti da click interattivi su un chart.
-Differenza: prima di cascadare, controlla se la cella *immediatamente
-successiva* al chart è anch'essa una "chart-derived filter" dello
-stesso chart (`meta.fromChartId === chartId`). Se sì, la **rimuove**
-prima di applicare la nuova → click successivi sullo stesso chart
-sostituiscono la selezione invece di stackare filtri contraddittori.
+Special version for filters produced by interactive clicks on a chart.
+Difference: before cascading, it checks if the cell *immediately
+following* the chart is also a "chart-derived filter" from the same
+chart (`meta.fromChartId === chartId`). If so, **removes** it before
+applying the new one → subsequent clicks on the same chart replace
+the selection instead of stacking contradictory filters.
 
-Poi delega a `applyChainAndCascade` con `meta: {fromChartId: chartId}`
-così la nuova cella è marchiata.
+Then delegates to `applyChainAndCascade` with `meta: {fromChartId:
+chartId}` so the new cell is tagged.
 
 #### `appendChartCell(parentIndex, opId, params)`
 
-I chart sono *leaves*: non avanzano lo stato. Quindi questa action
-**inserisce** una `ChartCellData` dopo `parentIndex` senza troncare il
-resto del notebook (non c'è nulla da rebase).
+Charts are *leaves*: they don't advance state. So this action
+**inserts** a `ChartCellData` after `parentIndex` without truncating
+the rest of the notebook (nothing to rebase).
 
-#### Persistenza
+#### Persistence
 
 ```ts
 {
   name: "va-notebook",
   version: 3,
   migrate: (_persisted, _version) => ({ cells: [] }),
-  partialize: (s) => ({ cells: s.cells }),     // non persistere isCascading/error
+  partialize: (s) => ({ cells: s.cells }),     // don't persist isCascading/error
 }
 ```
 
-`partialize` esclude i flag transienti. `version` bumped quando lo
-schema delle celle cambia: `migrate` scarta lo stato vecchio e parte
-da zero.
+`partialize` excludes transient flags. `version` bumped when the cell
+schema changes: `migrate` discards old state and starts fresh.
 
 #### Dev hint
 
@@ -339,7 +341,7 @@ if (import.meta.env.DEV) {
 }
 ```
 
-In dev console: `__notebookStore.getState().cells` per ispezionare.
+In dev console: `__notebookStore.getState().cells` to inspect.
 
 ### `store/ui.ts`
 
@@ -351,27 +353,27 @@ interface UIState {
   errorMessage: string | null;
   setError
 
-  vizCellId: string | null;     // id della cella che ha il viz panel aperto
+  vizCellId: string | null;     // id of the cell with the viz panel open
   chartTypeId: string;
   slots: { [slotName]: {column, type} }
   extras: { [name]: number | string }
   openVizPanel/closeVizPanel
-  setChartTypeId  // anche resetta slots+extras
+  setChartTypeId  // also resets slots+extras
   setSlot/clearSlot/setExtra/setExtras
 }
 ```
 
-UI state pure: cosa è aperto, cosa è selezionato, ultimo errore. Non
-viene persistito (è transiente per definizione).
+Pure UI state: what's open, what's selected, last error. Not persisted
+(transient by definition).
 
-`vizCellId` è una *chiave globale*: un solo viz panel può essere aperto
-alla volta. Se apri il viz panel sulla cella B mentre era aperto sulla
-A, A si chiude automaticamente. Questo è coordinato in `TableCellView.tsx`
-chiamando `openVizPanel(cell.id)` / `closeVizPanel()`.
+`vizCellId` is a *global key*: only one viz panel can be open at a
+time. If you open the viz panel on cell B while it was open on A, A
+closes automatically. Coordinated in `TableCellView.tsx` by calling
+`openVizPanel(cell.id)` / `closeVizPanel()`.
 
 ---
 
-## 3.5 `lib/` — helper puri
+## 3.5 `lib/` — pure helpers
 
 ### `lib/format.ts`
 
@@ -418,54 +420,55 @@ export const CHART_TYPES: ChartType[] = [
 ];
 ```
 
-Mirror del backend ma più semplice (il backend supporta più param come
-agg/value per heatmap). Il chart-builder sceglie da qua quali pillole
-e quali slot mostrare.
+Mirror of the backend but simpler (the backend supports more params
+like agg/value for heatmap). The chart-builder picks from here which
+pills to show and which slots to render.
 
 ---
 
 ## 3.6 `components/` — UI
 
-13 componenti. Vediamoli per ruolo.
+13 components. Let's go through them by role.
 
 ### Layout & navigation
 
 #### `Header.tsx`
-Bar superiore: cubo indigo + "Visual Notebook" + meta dataset
-(filename + row count) + due bottoni "Export CSV" e "Load different file"
-quando un dataset è caricato. Usa `useSession()` e `useReset()`.
+Top bar: indigo cube + "Visual Notebook" + dataset meta (filename + row
+count) + two buttons "Export CSV" and "Load different file" when a
+dataset is loaded. Uses `useSession()` and `useReset()`.
 
 #### `UploadPanel.tsx`
-Drop zone + click-to-browse. Usa `useUpload()` e gestisce lo stato di
-drag locale (`isDragging`). Sta da solo nel viewport quando `!has_data`.
+Drop zone + click-to-browse. Uses `useUpload()` and manages local
+drag state (`isDragging`). Standalone in the viewport when
+`!has_data`.
 
 #### `ErrorToast.tsx`
-Banner rossa in alto. Mostra `errorMessage` da UIStore. Auto-dismiss
-dopo 8 secondi via `setTimeout`. Bottone × per chiudere subito.
+Red banner at the top. Shows `errorMessage` from UIStore. Auto-dismiss
+after 8 seconds via `setTimeout`. × button to close immediately.
 
 #### `NotebookPage.tsx`
-Map sopra `notebook.cells` e renderizza `TableCellView` o `ChartCellView`
-per ognuno. Auto-scroll al fondo quando una nuova cella viene appesa
-(detect `cells.length > prevLength`).
+Maps over `notebook.cells` and renders `TableCellView` or
+`ChartCellView` for each. Auto-scrolls to bottom when a new cell is
+appended (detects `cells.length > prevLength`).
 
-### Celle del notebook
+### Notebook cells
 
 #### `TableCellView.tsx`
-Card della cella tabella. Contiene:
-- **Header**: badge "Dataset"/"Tabella", description, lineage chips
-  indigo, row count, ↓ CSV link, × per `truncateFrom(index)` (escluso
-  per la root)
-- **TablePreview** inline (limitata in altezza, paginata)
-- **Toolbar**: due bottoni "+ Manipolazione" e "+ Visualizzazione"
-- **Pannello inline**: quando uno dei due bottoni è attivo, sotto
-  apre un riquadro indigo con `<ManipulationPanel>` o `<VisualizationPanel>`
+Table cell card. Contains:
+- **Header**: "Dataset"/"Tabella" badge, description, indigo lineage
+  chips, row count, ↓ CSV link, × for `truncateFrom(index)` (excluded
+  for the root)
+- **TablePreview** inline (height-limited, paginated)
+- **Toolbar**: two buttons "+ Manipolazione" and "+ Visualizzazione"
+- **Inline panel**: when one of the two buttons is active, opens an
+  indigo box below with `<ManipulationPanel>` or `<VisualizationPanel>`
 
-`useState<PanelMode>` localmente per gestire quale dei due è aperto.
-Coordinato col `vizCellId` globale dello store UI per non avere due viz
-panel aperti su due celle diverse.
+`useState<PanelMode>` locally to track which of the two is open.
+Coordinated with the global `vizCellId` of the UI store so you don't
+have two viz panels open on two different cells.
 
 #### `ChartCellView.tsx`
-Card della cella chart. Render condizionale:
+Chart cell card. Conditional render:
 ```tsx
 {cell.opId === "viz_map"
   ? <MapCanvas payload={cell.spec as MapPayload} />
@@ -473,82 +476,84 @@ Card della cella chart. Render condizionale:
 }
 ```
 
-Inoltre **chart interattivi**: handlers su click di bin (histogram), bar
-(bar_topn), brush (scatter), datazoom (timeline), cell click (heatmap).
-Ogni handler costruisce una catena di filter ops e chiama
-`applyChainAfterChart(cellIndex, cell.id, ops)`. Vedi
+Plus **interactive charts**: handlers for click on bin (histogram), bar
+(bar_topn), brush (scatter), datazoom (timeline), cell click
+(heatmap). Each handler builds a chain of filter ops and calls
+`applyChainAfterChart(cellIndex, cell.id, ops)`. See
 [04-cascade.md → chart-driven filters](./04-cascade.md#chart-driven-filters).
 
 #### `TablePreview.tsx`
-Tabella HTML custom (no DataTable di nessuna libreria) con:
-- Header sticky con type-badge per ogni colonna
-- Righe alternate, hover indigo
-- Numeri allineati a destra, null italic muted, boolean tinted
-- Pagination `« ‹ X-Y of Z › »` in alto a destra
-- Auto-reset offset quando il `currentId` cambia (apply op upstream)
+Custom HTML table (no DataTable from any library) with:
+- Sticky header with type-badge for every column
+- Alternating rows, indigo hover
+- Right-aligned numbers, italic muted nulls, tinted booleans
+- `« ‹ X-Y of Z › »` pagination top right
+- Auto-reset offset when `currentId` changes (apply op upstream)
 
-Ha un parametro `stateId` — diverso dalla cella in cui sta — per
-fetchare la `usePreview()` giusta.
+Has a `stateId` parameter — different from the cell it sits in — to
+fetch the right `usePreview()`.
 
-### Form e widget
+### Forms and widgets
 
 #### `ManipulationPanel.tsx`
-Form per data ops. Apre con una grid 2×N di bottoni icona+label per
-ogni op data; click su uno → swap in `OpForm` con `Field` per ogni
+Form for data ops. Opens with a 2×N grid of icon+label buttons for
+each data op; click on one → swap to `OpForm` with `Field` for each
 ParamSpec.
 
-`Field` discrimina su `spec.kind`:
+`Field` discriminates on `spec.kind`:
 | kind | Widget |
 |---|---|
-| `column` / `column_*` | `<select>` filtrato per type |
-| `column_numeric_optional` | `<select>` con opzione "(none)" |
-| `value_from_column` | `<select>` popolato da distinct values del column param |
-| `multi_values_from_column` | `<select multiple>` da distinct values |
-| `columns_multi` | `<select multiple>` di nomi colonna |
-| `enum` | `<select>` da `spec.options` |
+| `column` / `column_*` | `<select>` filtered by type |
+| `column_numeric_optional` | `<select>` with "(none)" option |
+| `value_from_column` | `<select>` populated from distinct values of the column param |
+| `multi_values_from_column` | `<select multiple>` from distinct values |
+| `columns_multi` | `<select multiple>` of column names |
+| `enum` | `<select>` from `spec.options` |
 | `int` / `number` | `<input type="number">` |
 | `text` (default) | `<input type="text">` |
 
-Auto-fill: per `filter_range`, quando l'utente sceglie la colonna,
-`useColumnStats` carica min/max e li scrive nei campi min/max.
+Auto-fill: for `filter_range`, when the user picks the column,
+`useColumnStats` loads min/max and writes them in the min/max fields.
 
-Su Apply chiama `applyChainAndCascade(cellIndex, [{op_id, params}])`.
+On Apply calls `applyChainAndCascade(cellIndex, [{op_id, params}])`.
 
 #### `VisualizationPanel.tsx`
-Chart-builder con:
-- **Pillole** per scegliere il chart type (Histogram, Scatter, ecc.)
-- **Palette inline a sinistra**: chip colonna draggabili (anche
-  cliccabili per assignment al primo slot vuoto compatibile)
-- **Slot drop targets** (un drop per ogni `ChartSlot` del chart selezionato)
-- **Extras inline** (bins, n)
-- **Generate button** che chiama `appendChartCell(cellIndex, ...)`
+Chart-builder with:
+- **Pills** for picking chart type (Histogram, Scatter, etc.)
+- **Inline palette on the left**: draggable column chips (also
+  clickable for assignment to the first compatible empty slot)
+- **Slot drop targets** (one drop for each `ChartSlot` of the
+  selected chart)
+- **Inline extras** (bins, n)
+- **Generate button** that calls `appendChartCell(cellIndex, ...)`
 
-I drop sono droppabili da chip della stessa cella (`useDroppable` con
-`cellId` nel data). `App.tsx` filtra drop su `target.cellId === vizCellId`
-così non puoi droppare su un viz panel di un'altra cella per sbaglio.
+The drops are droppable from chips of the same cell (`useDroppable`
+with `cellId` in `data`). `App.tsx` filters drops on `target.cellId
+=== vizCellId` so you can't accidentally drop on another cell's viz
+panel.
 
-### Output specializzati
+### Specialised outputs
 
 #### `MapCanvas.tsx`
-Wrapper Leaflet (via `react-leaflet`):
-- `<MapContainer>` con tile CartoDB light
-- `<CircleMarker>` per ogni `point` dal payload
-- `<Recenter>` componente che chiama `map.setView(center, ...)` quando
-  cambia il center (necessario perché `MapContainer` cache la view
-  iniziale e non fa fly automatico)
+Leaflet wrapper (via `react-leaflet`):
+- `<MapContainer>` with CartoDB light tile
+- `<CircleMarker>` for every `point` from the payload
+- `<Recenter>` component that calls `map.setView(center, ...)` when
+  the center changes (necessary because `MapContainer` caches the
+  initial view and doesn't auto-fly)
 
 #### `SchemaView.tsx`
-Resa visuale del payload `{kind: "schema", columns: [...]}`. Card grid
-responsive con bordo sinistro colorato per tipo, dtype badge indigo,
-chip null/range. (Attualmente non triggerato da nessuna UI — il
-view_schema può essere chiamato via API ma non c'è ancora un bottone
-nella TableCellView. Roadmap.)
+Visual rendering of the `{kind: "schema", columns: [...]}` payload.
+Responsive card grid with type-coloured left border, indigo dtype
+badge, null/range chips. (Currently not triggered by any UI — the
+view_schema can be invoked via API but there's no button in
+TableCellView yet. Roadmap.)
 
 ---
 
-## 3.7 Styling: Tailwind + classi semantiche
+## 3.7 Styling: Tailwind + semantic classes
 
-### Palette custom in `tailwind.config.js`
+### Custom palette in `tailwind.config.js`
 
 ```js
 colors: {
@@ -560,28 +565,29 @@ colors: {
 }
 ```
 
-Uso semantico:
-- `bg-panel` — superfici (card)
+Semantic use:
+- `bg-panel` — surfaces (cards)
 - `bg-panel2` — surface 2 (alternate row, header)
 - `bg-panel3` — hover/active
 - `text-text` / `text-textd` / `text-textdim` / `text-textmute` —
-  scala 4 livelli di contrasto del testo
-- `bg-accent` per primari, `bg-accent50` per backgrounds tenui (hover
-  accent), `text-accent` per accenti foreground
+  4-level text contrast scale
+- `bg-accent` for primary, `bg-accent50` for soft backgrounds (accent
+  hover), `text-accent` for foreground accents
 
-### Convenzioni componenti
+### Component conventions
 
 - Card: `bg-panel border border-border rounded-lg shadow-card`
-- Bottone primario: `bg-accent text-white border-accent hover:bg-indigo-700`
-- Bottone secondario: `bg-panel border-border hover:bg-panel2 hover:border-border2 text-text`
-- Type badge (numeric/categorical/...) usa Tailwind built-in:
+- Primary button: `bg-accent text-white border-accent hover:bg-indigo-700`
+- Secondary button: `bg-panel border-border hover:bg-panel2 hover:border-border2 text-text`
+- Type badges (numeric/categorical/...) use Tailwind built-ins:
   `bg-indigo-50 text-indigo-700`, `bg-emerald-50 text-emerald-700`,
   `bg-amber-50 text-amber-700`, `bg-pink-50 text-pink-700`
-- Font sizes piccoli usati spesso: `text-[11px]` per caption,
+- Frequently used small font sizes: `text-[11px]` for caption,
   `text-[12px]` form labels, `text-[13px]` body, `text-[14px]` h-tags.
 
 ### Leaflet override (in `styles/index.css`)
 
-Le classi `.leaflet-control-attribution`, `.leaflet-bar a`, ecc. vengono
-override per matchare il tema light minimalist. Senza override avrebbero
-sfondi grigi chiari di default che stonano col panel bianco.
+`.leaflet-control-attribution`, `.leaflet-bar a`, etc. classes are
+overridden to match the light minimalist theme. Without overrides
+they'd have default light-grey backgrounds that clash with the white
+panel.
